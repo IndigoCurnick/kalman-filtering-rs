@@ -7,7 +7,7 @@ pub fn update(x: &Matrix, p: &Matrix, h: &Matrix, z: &Matrix, r: &Matrix) -> (Ma
     let s_inv = s.inv();
     let k = &pht * &s_inv;
     let new_x = x + &(&k * &residual);
-    let i_kh = eye(x.col) - (&k * h);
+    let i_kh = eye(x.row) - (&k * h);
     let new_cov = &(&(&i_kh * p) * &i_kh.t()) + &(&(&k * r) * &k.t());
 
     return (new_x, new_cov);
