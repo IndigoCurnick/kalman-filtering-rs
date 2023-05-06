@@ -13,8 +13,17 @@ pub fn update(x: &Matrix, p: &Matrix, h: &Matrix, z: &Matrix, r: &Matrix) -> (Ma
     return (new_x, new_cov);
 }
 
-pub fn predict(x: &Matrix, p: &Matrix, f: &Matrix, q: &Matrix) -> (Matrix, Matrix) {
-    let new_x = f * x;
+pub fn predict(
+    x: &Matrix,
+    p: &Matrix,
+    f: &Matrix,
+    q: &Matrix,
+    g: Option<&Matrix>,
+) -> (Matrix, Matrix) {
+    let mut new_x = f * x;
+    if g.is_some() {
+        new_x = &new_x + g.unwrap();
+    }
     let new_cov = &(&(f * p) * f) + q;
 
     return (new_x, new_cov);

@@ -18,7 +18,7 @@ fn main() {
         let q = matrix(vec![0.0], 1, 1, Row);
         let r = matrix(vec![10.0], 1, 1, Row);
 
-        let (new_x, new_p) = predict(&x, &p, &f, &q);
+        let (new_x, new_p) = predict(&x, &p, &f, &q, None);
         let (new_x, new_p) = update(&new_x, &new_p, &h, &z, &r);
 
         history.push(new_x.data[0]);
