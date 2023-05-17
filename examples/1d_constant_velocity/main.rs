@@ -13,7 +13,7 @@ fn main() {
     let mut p = eye(2);
 
     let h = matrix(vec![1.0, 0.0], 1, 2, Row);
-    let f = matrix(vec![1.0, 0.5, 0.0, 1.0], 2, 2, Row);
+    let f = matrix(vec![1.0, 1.0, 0.0, 1.0], 2, 2, Row);
 
     let mut position_history = vec![];
     let mut speed_history = vec![];
