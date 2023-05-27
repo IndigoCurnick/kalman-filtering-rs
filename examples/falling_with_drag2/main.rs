@@ -14,8 +14,8 @@ fn main() {
 
     let h = matrix(vec![1.0, 0.0, 0.0], 1, 3, Row);
     let r = matrix(vec![SIGNOISE], 1, 1, Row);
-    let mut state = zeros(3, 3);
-    state[(0, 2)] = 1.0; // If beta = 0 then we get NaNs
+    let mut state = zeros(3, 1);
+    state[(2, 0)] = 1.0; // If beta = 0 then we get NaNs
     let mut cov = zeros(3, 3);
     cov[(0, 0)] = 99999.9;
     cov[(1, 1)] = 99999.9;

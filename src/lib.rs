@@ -42,7 +42,10 @@ pub fn extended_update(
     let s = &(h * &pht) + r;
     let s_inv = s.inv();
     let k = &pht * &s_inv;
-    let new_x = x + &(&k * &residual);
+
+    let d = (&k * &residual);
+    println!("d\n{}", d);
+    let new_x = x + &d;
     let i_kh = eye(x.row) - (&k * h);
     let new_cov = &(&(&i_kh * p) * &i_kh.t()) + &(&(&k * r) * &k.t());
 
