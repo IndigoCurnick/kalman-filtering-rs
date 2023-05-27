@@ -7,7 +7,7 @@ const G: f64 = -9.81;
 const TS: f64 = 0.1; // Seconds
 const SIGNOISE: f64 = 304.8;
 const INITX: f64 = 6705.0;
-const PHI: f64 = 600.0;
+const PHI: f64 = 1000.0;
 
 fn main() {
     let data = get_data();
