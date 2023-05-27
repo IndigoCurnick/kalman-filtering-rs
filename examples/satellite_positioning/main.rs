@@ -1,4 +1,5 @@
 use plotly::{Plot, Scatter};
+use rand_distr::{Distribution, Normal};
 
 const TRUE_X: f64 = 5000.0;
 const TRUE_Y: f64 = 300.0;
@@ -10,6 +11,9 @@ fn main() {
 
     let mut x_h = vec![];
     let mut y_h = vec![];
+
+    let mut x_m = vec![];
+    let mut y_m = vec![];
 
     for i in 0..data.r1.len() {
         let (x, y) = solve_position(
@@ -23,6 +27,18 @@ fn main() {
 
         x_h.push(x);
         y_h.push(y);
+
+        let (x, y) = solve_position(
+            data.r1_m[i],
+            data.r2_m[i],
+            data.xr1[i],
+            data.yr1[i],
+            data.xr2[i],
+            data.yr2[i],
+        );
+
+        x_m.push(x);
+        y_m.push(x);
     }
 
     let mut plot = Plot::new();
@@ -32,6 +48,9 @@ fn main() {
 
     let true_trace = Scatter::new(vec![TRUE_X], vec![TRUE_Y]).name("True position");
     plot.add_trace(true_trace);
+
+    let noisy_trace = Scatter::new(x_m, y_m).name("Calculated from noisy measurements");
+    plot.add_trace(noisy_trace);
 
     plot.show();
 }
@@ -65,10 +84,16 @@ fn get_data() -> Data {
     let mut r1_h = vec![];
     let mut r2_h = vec![];
 
+    let mut r1_m = vec![];
+    let mut r2_m = vec![];
+
     let mut xr1_h = vec![];
     let mut yr1_h = vec![];
     let mut xr2_h = vec![];
     let mut yr2_h = vec![];
+
+    let normal = Normal::new(0.0, R).unwrap();
+    let mut rng = rand::thread_rng();
 
     for i in 0..100 {
         let r1 = ((x1 - TRUE_X).powf(2.0) + (y1 - TRUE_Y).powf(2.0)).sqrt();
@@ -76,6 +101,9 @@ fn get_data() -> Data {
 
         r1_h.push(r1);
         r2_h.push(r2);
+
+        r1_m.push(r1 + normal.sample(&mut rng));
+        r2_m.push(r2 + normal.sample(&mut rng));
 
         xr1_h.push(x1);
         yr1_h.push(y1);
@@ -90,6 +118,8 @@ fn get_data() -> Data {
     return Data {
         r1: r1_h,
         r2: r2_h,
+        r1_m: r1_m,
+        r2_m: r2_m,
         xr1: xr1_h,
         yr1: yr1_h,
         xr2: xr2_h,
@@ -100,6 +130,8 @@ fn get_data() -> Data {
 struct Data {
     pub r1: Vec<f64>,
     pub r2: Vec<f64>,
+    pub r1_m: Vec<f64>,
+    pub r2_m: Vec<f64>,
     pub xr1: Vec<f64>,
     pub yr1: Vec<f64>,
     pub xr2: Vec<f64>,
