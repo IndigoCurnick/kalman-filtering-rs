@@ -13,7 +13,7 @@ const TS: f64 = 0.1; // Time step s
 const THETA_ERROR: f64 = 0.01; // radians
 const R_ERROR: f64 = 20.5; // m
 const RADAR_DIST: f64 = 30_500.0; // m
-const Q: f64 = 100.0; // Q scaling factor
+const Q: f64 = 1.0; // Q scaling factor
 
 fn main() {
     linear_sim();
