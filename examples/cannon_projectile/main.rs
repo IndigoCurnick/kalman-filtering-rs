@@ -170,7 +170,8 @@ fn efk_sim() {
             Row,
         );
         let (new_state, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, Some(&g));
-        let (new_state, new_cov) = extended_update(&h_func, &new_state, &new_cov, &h, &z, &r_noise);
+        let (new_state, new_cov) =
+            extended_update(&h_func, &new_state, &new_cov, &h, &z, &r_noise, None);
 
         x_filter.push(new_state.data[0]);
         y_filter.push(new_state.data[2]);
@@ -290,7 +291,7 @@ fn f_func(x: &Vec<f64>, g: Option<&Vec<f64>>) -> Matrix {
     return p;
 }
 
-fn h_func(x: &Vec<f64>) -> Matrix {
+fn h_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
     let current_x_estimate = x[0];
     let current_y_estimate = x[2];
     let current_r_estimate = r(current_x_estimate, current_y_estimate);

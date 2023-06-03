@@ -30,14 +30,15 @@ pub fn predict(
 }
 
 pub fn extended_update(
-    h_func: &dyn Fn(&Vec<f64>) -> Matrix,
+    h_func: &dyn Fn(&Vec<f64>, Option<&Vec<f64>>) -> Matrix,
     x: &Matrix,
     p: &Matrix,
     h: &Matrix,
     z: &Matrix,
     r: &Matrix,
+    o: Option<&Vec<f64>>,
 ) -> (Matrix, Matrix) {
-    let residual = z - &h_func(&x.data);
+    let residual = z - &h_func(&x.data, o);
     let pht = p * &h.t();
     let s = &(h * &pht) + r;
     let s_inv = s.inv();

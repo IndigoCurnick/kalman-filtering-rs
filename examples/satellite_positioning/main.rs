@@ -1,3 +1,8 @@
+use kalman_filtering_rs::{extended_predict, extended_update};
+use peroxide::{
+    prelude::{matrix, zeros, Matrix, Shape::Row},
+    statistics::stat,
+};
 use plotly::{Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
@@ -15,30 +20,66 @@ fn main() {
     let mut x_m = vec![];
     let mut y_m = vec![];
 
+    let mut x_filter = vec![];
+    let mut y_filter = vec![];
+
+    let mut state = zeros(2, 1);
+    let mut cov = zeros(2, 2);
+    cov[(0, 0)] = 9999999.9;
+    cov[(1, 1)] = 9999999.9;
+
+    let f = matrix(vec![1.0, 0.0, 0.0, 1.0], 2, 2, Row);
+    let r = matrix(vec![R, 0.0, 0.0, R], 2, 2, Row);
+    let q = zeros(2, 2);
+
     for i in 0..data.r1.len() {
-        let (x, y) = solve_position(
-            data.r1[i],
-            data.r2[i],
-            data.xr1[i],
-            data.yr1[i],
-            data.xr2[i],
-            data.yr2[i],
-        );
+        let r1 = data.r1[i];
+        let r2 = data.r2[i];
+        let r1_m = data.r1_m[i];
+        let r2_m = data.r2_m[i];
+        let xr1 = data.xr1[i];
+        let yr1 = data.yr1[i];
+        let xr2 = data.xr2[i];
+        let yr2 = data.yr2[i];
+
+        let (x, y) = solve_position(r1, r2, xr1, yr1, xr2, yr2);
 
         x_h.push(x);
         y_h.push(y);
 
-        let (x, y) = solve_position(
-            data.r1_m[i],
-            data.r2_m[i],
-            data.xr1[i],
-            data.yr1[i],
-            data.xr2[i],
-            data.yr2[i],
-        );
+        let (x, y) = solve_position(r1_m, r2_m, xr1, yr1, xr2, yr2);
 
         x_m.push(x);
-        y_m.push(x);
+        y_m.push(y);
+
+        let z = matrix(vec![x, y], 2, 1, Row);
+
+        let x = state.data[0];
+        let y = state.data[1];
+
+        let h = matrix(
+            vec![
+                -(xr1 - x) / r1,
+                -(yr1 - y) / r1,
+                -(xr2 - x) / r2,
+                -(yr2 - y) / r2,
+            ],
+            2,
+            2,
+            Row,
+        );
+
+        let o = vec![xr1, yr1, xr2, yr2, r1_m, r2_m];
+
+        let (new_state, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
+        let (new_state, new_cov) =
+            extended_update(&h_func, &new_state, &new_cov, &h, &z, &r, Some(&o));
+
+        state = new_state;
+        cov = new_cov;
+
+        x_filter.push(state.data[0]);
+        y_filter.push(state.data[1]);
     }
 
     let mut plot = Plot::new();
@@ -52,7 +93,47 @@ fn main() {
     let noisy_trace = Scatter::new(x_m, y_m).name("Calculated from noisy measurements");
     plot.add_trace(noisy_trace);
 
+    let filter_trace = Scatter::new(x_filter, y_filter).name("Filter");
+    plot.add_trace(filter_trace);
+
     plot.show();
+}
+
+fn f_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
+    let f = matrix(vec![1.0, 0.0, 0.0, 1.0], 2, 2, Row);
+    let x = matrix(x.clone(), 2, 1, Row);
+
+    return f * x;
+}
+
+fn h_func(state: &Vec<f64>, o: Option<&Vec<f64>>) -> Matrix {
+    let x = state[0];
+    let y = state[1];
+
+    let o = o.unwrap();
+
+    let xr1 = o[0];
+    let yr1 = o[1];
+    let xr2 = o[2];
+    let yr2 = o[3];
+    let r1 = o[4];
+    let r2 = o[5];
+
+    let h = matrix(
+        vec![
+            -(xr1 - x) / r1,
+            -(yr1 - y) / r1,
+            -(xr2 - x) / r2,
+            -(yr2 - y) / r2,
+        ],
+        2,
+        2,
+        Row,
+    );
+
+    let s = matrix(state.clone(), 2, 1, Row);
+
+    return h * s;
 }
 
 fn solve_position(r1: f64, r2: f64, xr1: f64, yr1: f64, xr2: f64, yr2: f64) -> (f64, f64) {

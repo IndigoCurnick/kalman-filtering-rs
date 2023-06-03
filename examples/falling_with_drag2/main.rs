@@ -30,7 +30,7 @@ fn main() {
         let q = q(state.data[0], state.data[1], state.data[2], TS);
 
         let (new_x, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
-        let (new_x, new_cov) = extended_update(&h_func, &new_x, &new_cov, &h, &z, &r);
+        let (new_x, new_cov) = extended_update(&h_func, &new_x, &new_cov, &h, &z, &r, None);
 
         state = new_x;
         cov = new_cov;
@@ -282,7 +282,7 @@ fn f_func(x: &Vec<f64>, _u: Option<&Vec<f64>>) -> Matrix {
     return f;
 }
 
-fn h_func(x: &Vec<f64>) -> Matrix {
+fn h_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
     let h = matrix(vec![1.0, 0.0, 0.0], 1, 3, Row);
     let l = x.len();
     let x = matrix(x.clone(), l, 1, Row);

@@ -35,7 +35,7 @@ fn main() {
         let z = matrix(vec![data.y_m[i]], 1, 1, Row);
 
         let (new_state, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
-        let (new_state, new_cov) = extended_update(&h_func, &new_state, &new_cov, &h, &z, &r);
+        let (new_state, new_cov) = extended_update(&h_func, &new_state, &new_cov, &h, &z, &r, None);
 
         let estimated_y = new_state.data[2] * (new_state.data[1] * data.t[i]).sin();
 
@@ -97,7 +97,7 @@ fn f() -> Matrix {
     );
 }
 
-fn h_func(v: &Vec<f64>) -> Matrix {
+fn h_func(v: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
     let state = matrix(v.clone(), 3, 1, Row);
     let a = state.data[2];
     let phi = state.data[0];
