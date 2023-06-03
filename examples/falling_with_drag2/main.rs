@@ -1,5 +1,7 @@
-use kalman_filtering_rs::{extended_predict, extended_update};
-use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
+use peroxide::{
+    fuga::LinearAlgebra,
+    prelude::{eye, matrix, zeros, Matrix, Shape::Row},
+};
 use plotly::{common::Title, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
@@ -7,13 +9,14 @@ const G: f64 = -9.81;
 const TS: f64 = 0.1; // Seconds
 const SIGNOISE: f64 = 304.8;
 const INITX: f64 = 6705.0;
-const PHI: f64 = 1000.0;
+const PHI: f64 = 1.0;
+const BETA: f64 = 100.0;
 
 fn main() {
     let data = get_data();
 
     let h = matrix(vec![1.0, 0.0, 0.0], 1, 3, Row);
-    let r = matrix(vec![SIGNOISE], 1, 1, Row);
+    let r = matrix(vec![SIGNOISE.powf(2.0)], 1, 1, Row);
     let mut state = zeros(3, 1);
     state[(2, 0)] = 1.0; // If beta = 0 then we get NaNs
     let mut cov = zeros(3, 3);
@@ -23,22 +26,39 @@ fn main() {
 
     let mut x_history = vec![];
     let mut v_history = vec![];
+    let mut beta_history = vec![];
+
     for i in 0..data.time.len() {
-        let z = matrix(vec![data.measured_positions_draggy[i]], 1, 1, Row);
+        let x_star = data.measured_positions_draggy[i];
 
-        let f = make_f(state.data[0], state.data[1], state.data[2]);
-        let q = q(state.data[0], state.data[1], state.data[2], TS);
+        let psi = make_psi(state.data[0], state.data[1], state.data[2]);
+        let q = q(state.data[0], state.data[1], state.data[2]);
 
-        let (new_x, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
-        let (new_x, new_cov) = extended_update(&h_func, &new_x, &new_cov, &h, &z, &r, None);
+        let m = &(&(&psi * &cov) * &psi.t()) + &q;
+        let k = &(&m * &h.t()) * &(&(&(&h * &m) * &h.t()) + &r).inv();
 
-        state = new_x;
-        cov = new_cov;
+        let k1 = k.data[0];
+        let k2 = k.data[1];
+        let k3 = k.data[2];
+
+        let x_bar = state.data[0];
+        let xdot_bar = state.data[1];
+        let beta_bar = state.data[2];
+
+        let x_tilde = x_star - x_bar;
+
+        let x_hat = x_bar + k1 * x_tilde;
+        let xdot_hat = xdot_bar + k2 * x_tilde;
+        let beta_hat = beta_bar + k3 * x_tilde;
 
         println!("{}", state);
 
-        x_history.push(state.data[0]);
-        v_history.push(state.data[1]);
+        x_history.push(x_hat);
+        v_history.push(xdot_hat);
+        beta_history.push(beta_hat);
+
+        state = matrix(vec![x_hat, xdot_hat, beta_hat], 3, 1, Row);
+        cov = &(eye(3) - &k * &h) * &m;
     }
 
     // Position
@@ -84,10 +104,22 @@ fn main() {
     plot.set_layout(layout);
     plot.add_traces(vec![trace_drag, trace_nodrag]);
     plot.show();
+
+    // Beta
+    let mut plot = Plot::new();
+    let layout = Layout::default().title(Title::new("Beta"));
+    let ideal = Scatter::new(
+        vec![data.time[0], data.time[data.time.len() - 1]],
+        vec![BETA, BETA],
+    )
+    .name("Ideal");
+    let beta_trace = Scatter::new(data.time.clone(), beta_history).name("Filter");
+    plot.set_layout(layout);
+    plot.add_traces(vec![ideal, beta_trace]);
+    plot.show();
 }
 
 fn get_data() -> SimulationData {
-    const BETA: f64 = 100.0;
     let mut t = 0.0;
     let mut x = INITX;
     let mut v = 0.0;
@@ -162,18 +194,21 @@ struct SimulationUnit {
     pub acceleration: Vec<f64>,
 }
 
-fn make_f(position: f64, velocity: f64, beta: f64) -> Matrix {
+fn make_psi(position: f64, velocity: f64, beta: f64) -> Matrix {
+    let f21 = f21(position, velocity, beta);
+    let f22 = f22(position, velocity, beta);
+    let f23 = f23(position, velocity, beta);
     return matrix(
         vec![
+            1.0,
+            TS,
+            0.0,
+            f21 * TS,
+            1.0 + f22 * TS,
+            f23 * TS,
+            0.0,
             0.0,
             1.0,
-            0.0,
-            f21(position, velocity, beta),
-            f22(position, velocity, beta),
-            f23(position, velocity, beta),
-            0.0,
-            0.0,
-            0.0,
         ],
         3,
         3,
@@ -203,88 +238,24 @@ fn f23(position: f64, velocity: f64, beta: f64) -> f64 {
     return f;
 }
 
-fn q(position: f64, velocity: f64, beta: f64, dt: f64) -> Matrix {
-    fn q11(f23: f64, dt: f64) -> f64 {
-        return f23.powf(2.0) * (dt.powf(5.0) / 5.0);
-    }
-
-    fn q12(f22: f64, f23: f64, dt: f64) -> f64 {
-        return f23.powf(2.0) + f22 * f23.powf(2.0) * (dt.powf(5.0) / 20.0);
-    }
-
-    fn q13(f23: f64, dt: f64) -> f64 {
-        return f23 * (dt.powf(3.0) / 6.0);
-    }
-
-    fn q21(f22: f64, f23: f64, dt: f64) -> f64 {
-        return f23.powf(2.0) * (dt.powf(4.0) / 8.0) + f22 * f23.powf(2.0) * (dt.powf(5.0) / 20.0);
-    }
-
-    fn q22(f22: f64, f23: f64, dt: f64) -> f64 {
-        return f23.powf(2.0) * (dt.powf(3.0) / 6.0)
-            + 2.0 * f22.powf(2.0) * f23.powf(2.0) * (dt.powf(5.0) / 20.0)
-            + f22 * f23.powf(2.0) * (dt.powf(4.0) / 8.0);
-    }
-
-    fn q23(f22: f64, f23: f64, dt: f64) -> f64 {
-        return f23 * (dt.powf(2.0) / 2.0) + f22 * f23 * (dt.powf(3.0) / 6.0);
-    }
-
-    fn q31(f23: f64, dt: f64) -> f64 {
-        return f23 * (dt.powf(3.0) / 6.0);
-    }
-
-    fn q32(f22: f64, f23: f64, dt: f64) -> f64 {
-        return f23 * (dt.powf(2.0) / 2.0) + f22 * f23 * (dt.powf(3.0) / 6.0);
-    }
-
-    fn q33(dt: f64) -> f64 {
-        return dt;
-    }
-
-    let f21 = f21(position, velocity, beta);
-    let f22 = f22(position, velocity, beta);
+fn q(position: f64, velocity: f64, beta: f64) -> Matrix {
     let f23 = f23(position, velocity, beta);
 
     let q = matrix(
         vec![
-            q11(f23, dt),
-            q12(f22, f23, dt),
-            q13(f23, dt),
-            q21(f22, f23, dt),
-            q22(f22, f23, dt),
-            q23(f22, f23, dt),
-            q31(f23, dt),
-            q32(f22, f23, dt),
-            q33(dt),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            f23.powf(2.0) * TS.powf(3.0) / 3.0,
+            f23 * TS.powf(2.0) / 2.0,
+            0.0,
+            f23 * TS.powf(2.0) / 2.0,
+            TS,
         ],
         3,
         3,
         Row,
     );
     return PHI * q;
-}
-
-fn f_func(x: &Vec<f64>, _u: Option<&Vec<f64>>) -> Matrix {
-    let s = x[0];
-    let u = x[1];
-    let beta = x[2];
-    println!("s {}, u {}, beta {}", s, u, beta);
-    let ahat = -calc_accel(s, u, beta);
-    println!("ahat {}", ahat);
-    let v = u - ahat * TS;
-    let d = 0.5 * (u + v) * TS;
-
-    let f = matrix(vec![s - d, v, beta], 3, 1, Row);
-
-    println!("f func {}", f);
-
-    return f;
-}
-
-fn h_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
-    let h = matrix(vec![1.0, 0.0, 0.0], 1, 3, Row);
-    let l = x.len();
-    let x = matrix(x.clone(), l, 1, Row);
-    return h * x;
 }

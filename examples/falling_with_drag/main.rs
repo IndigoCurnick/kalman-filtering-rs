@@ -1,21 +1,20 @@
-use kalman_filtering_rs::{extended_predict, extended_update};
+use kalman_filtering_rs::{make_k, make_m, new_cov};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
-
 const G: f64 = -9.81;
 const BETA: f64 = 100.0; // Book suggests values from 2,500-10,000kg/m^2
 const TS: f64 = 0.1; // Seconds
 const SIGNOISE: f64 = 304.8;
 const INITX: f64 = 6705.0;
-const PHI: f64 = 0.1;
+const PHI: f64 = 100.0;
 
 fn main() {
     let data = get_data();
 
     let h = matrix(vec![1.0, 0.0], 1, 2, Row);
-    let r = matrix(vec![SIGNOISE], 1, 1, Row);
-    let mut state = zeros(2, 2);
+    let r = matrix(vec![SIGNOISE.powf(2.0)], 1, 1, Row);
+    let mut state = zeros(2, 1);
     let mut cov = zeros(2, 2);
     cov[(0, 0)] = 99999.9;
     cov[(1, 1)] = 99999.9;
@@ -23,19 +22,34 @@ fn main() {
     let mut x_history = vec![];
     let mut v_history = vec![];
     for i in 0..data.time.len() {
-        let z = matrix(vec![data.measured_positions_draggy[i]], 1, 1, Row);
+        let x_star = data.measured_positions_draggy[i];
 
-        let f = make_f(state.data[0], state.data[1]);
-        let q = q(state.data[0], state.data[1]);
+        let xkminus1 = state.data[0];
+        let xdotkminus1 = state.data[1];
 
-        let (new_x, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
-        let (new_x, new_cov) = extended_update(&h_func, &new_x, &new_cov, &h, &z, &r, None);
+        let xdotdot_bar =
+            0.0034 * G * (-xkminus1 / INITX).exp() * xdotkminus1.powf(2.0) / (2.0 * BETA) - G;
 
-        state = new_x;
-        cov = new_cov;
+        let xdot_bar = xdotkminus1 + TS * xdotdot_bar;
+        let x_bar = xkminus1 + TS * xdot_bar;
 
-        x_history.push(state.data[0]);
-        v_history.push(state.data[1]);
+        let phi = make_phi(x_bar, xdot_bar);
+        let q = q(x_bar, xdot_bar);
+        let m = make_m(&phi, &cov, &q);
+        let k = make_k(&m, &h, &r);
+
+        let x_tilda = x_star - x_bar;
+
+        let k1 = k.data[0];
+        let k2 = k.data[1];
+
+        let x_hat = x_bar + k1 * x_tilda;
+        let xdot_hat = xdot_bar + k2 * x_tilda;
+
+        state = matrix(vec![x_hat, xdot_hat], 2, 1, Row);
+        cov = new_cov(&k, &h, &m);
+        x_history.push(x_hat);
+        v_history.push(-xdot_hat);
     }
 
     // Position
@@ -158,9 +172,14 @@ struct SimulationUnit {
     pub acceleration: Vec<f64>,
 }
 
-fn make_f(position: f64, velocity: f64) -> Matrix {
+fn make_phi(position: f64, velocity: f64) -> Matrix {
     return matrix(
-        vec![0.0, 1.0, f21(position, velocity), f22(position, velocity)],
+        vec![
+            1.0,
+            TS,
+            f21(position, velocity) * TS,
+            1.0 + f22(position, velocity) * TS,
+        ],
         2,
         2,
         Row,
@@ -186,30 +205,11 @@ fn q(position: f64, velocity: f64) -> Matrix {
             TS.powf(3.0) / 3.0,
             TS.powf(2.0) / 2.0 + (f22 * TS.powf(3.0)) / 3.0,
             TS.powf(2.0) / 2.0 + (f22 * TS.powf(3.0)) / 3.0,
-            TS + f22 + TS.powf(2.0) + f22.powf(2.0) * TS.powf(3.0) / 3.0,
+            TS + f22 * TS.powf(2.0) + f22.powf(2.0) * TS.powf(3.0) / 3.0,
         ],
         2,
         2,
         Row,
     );
     return PHI * q;
-}
-
-fn f_func(x: &Vec<f64>, _u: Option<&Vec<f64>>) -> Matrix {
-    let s = x[0];
-    let u = x[1];
-
-    let ahat = -calc_accel(s, u);
-
-    let v = u - ahat * TS;
-    let d = 0.5 * (u + v) * TS;
-
-    return matrix(vec![s - d, v], 2, 1, Row);
-}
-
-fn h_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
-    let h = matrix(vec![1.0, 0.0], 1, 2, Row);
-    let l = x.len();
-    let x = matrix(x.clone(), l, 1, Row);
-    return h * x;
 }
