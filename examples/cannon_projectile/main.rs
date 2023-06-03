@@ -1,4 +1,4 @@
-use kalman_filtering_rs::{extended_predict, extended_update, predict, update};
+use kalman_filtering_rs::{make_k, make_m, new_cov, predict, update};
 use peroxide::{
     prelude::{diag, eye, matrix, zeros, Matrix, Shape::Row},
     statistics::stat,
@@ -13,7 +13,7 @@ const TS: f64 = 0.1; // Time step s
 const THETA_ERROR: f64 = 0.01; // radians
 const R_ERROR: f64 = 20.5; // m
 const RADAR_DIST: f64 = 30_500.0; // m
-const Q: f64 = 1.0; // Q scaling factor
+const Q: f64 = 10.0; // Q scaling factor
 
 fn main() {
     linear_sim();
@@ -104,7 +104,7 @@ fn linear_sim() {
 fn efk_sim() {
     let data = get_data();
 
-    let r_noise = matrix(
+    let r = matrix(
         vec![THETA_ERROR.powf(2.0), 0.0, 0.0, R_ERROR.powf(2.0)],
         2,
         2,
@@ -125,61 +125,83 @@ fn efk_sim() {
     let mut x_measurements = vec![];
     let mut y_measurements = vec![];
 
-    let g = vec![0.0, 0.0, -G * TS.powf(2.0) / 2.0, -G * TS];
-    let f = matrix(
+    let mut x_filter = vec![];
+    let mut y_filter = vec![];
+
+    let phi = matrix(
         vec![
-            1.0, TS, 0.0, 0.0, // These comments
-            0.0, 1.0, 0.0, 0.0, // are just here
-            0.0, 0.0, 1.0, TS, // to stop format
-            0.0, 0.0, 0.0, 1.0, // putting this on one line
+            1.0, TS, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, TS, //
+            0.0, 0.0, 0.0, 1.0, //
         ],
         4,
         4,
         Row,
     );
 
-    let mut x_filter = vec![];
-    let mut y_filter = vec![];
-
     for i in 0..data.r_measurements.len() {
-        let theta_m = data.theta_measurements[i];
-        let r_m = data.r_measurements[i];
+        let theta_star = data.theta_measurements[i];
+        let r_star = data.r_measurements[i];
 
-        x_measurements.push(x(r_m, theta_m));
-        y_measurements.push(y(r_m, theta_m));
+        x_measurements.push(x(r_star, theta_star));
+        y_measurements.push(y(r_star, theta_star));
 
-        let z = matrix(vec![theta_m, r_m], 2, 1, Row);
+        let xkminus1 = state.data[0];
+        let xdotkminus1 = state.data[1];
+        let ykminus1 = state.data[2];
+        let ydotkminus1 = state.data[3];
 
-        let current_x_estimate = state.data[0];
-        let current_y_estimate = state.data[2];
-        let current_r_estimate = r(current_x_estimate, current_y_estimate);
-        // let current_theta_estimate = theta(current_x_estimate, current_y_estimate);
+        let x_bar = xkminus1 + TS * xdotkminus1;
+        let xdot_bar = xdotkminus1;
+        let y_bar = ykminus1 + TS * ydotkminus1 - 0.5 * G * TS.powf(2.0);
+        let ydot_bar = ydotkminus1 - G * TS;
+
+        let theta_bar = y_bar.atan2(x_bar - RADAR_DIST);
+        // let theta_bar = (y_bar / x_bar - RADAR_DIST).atan();
+        let r_bar = ((x_bar - RADAR_DIST).powf(2.0) + y_bar.powf(2.0)).sqrt();
+
         let h = matrix(
             vec![
-                -current_y_estimate / current_r_estimate.powf(2.0),
+                -y_bar / r_bar.powf(2.0),
                 0.0,
-                (current_x_estimate - RADAR_DIST) / current_r_estimate.powf(2.0),
+                (x_bar - RADAR_DIST) / r_bar.powf(2.0),
                 0.0,
-                (current_x_estimate - RADAR_DIST) / current_r_estimate,
+                (x_bar - RADAR_DIST) / r_bar,
                 0.0,
-                current_y_estimate / current_r_estimate,
+                y_bar / r_bar,
                 0.0,
             ],
             2,
             4,
             Row,
         );
-        let (new_state, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, Some(&g));
-        let (new_state, new_cov) =
-            extended_update(&h_func, &new_state, &new_cov, &h, &z, &r_noise, None);
 
-        x_filter.push(new_state.data[0]);
-        y_filter.push(new_state.data[2]);
+        let m = make_m(&phi, &cov, &q);
+        let k = make_k(&m, &h, &r);
 
-        println!("state after\n{}", new_state);
+        let k11 = k[(0, 0)];
+        let k12 = k[(0, 1)];
+        let k21 = k[(1, 0)];
+        let k22 = k[(1, 1)];
+        let k31 = k[(2, 0)];
+        let k32 = k[(2, 1)];
+        let k41 = k[(3, 0)];
+        let k42 = k[(3, 1)];
 
-        state = new_state;
-        cov = new_cov;
+        let theta_tilde = theta_star - theta_bar;
+        let r_tilde = r_star - r_bar;
+
+        let x_hat = x_bar + k11 * theta_tilde + k12 * r_tilde;
+        let xdot_hat = xdot_bar + k21 * theta_tilde + k22 * r_tilde;
+        let y_hat = y_bar + k31 * theta_tilde + k32 * r_tilde;
+        let ydot_hat = ydot_bar + k41 * theta_tilde + k42 * r_tilde;
+
+        x_filter.push(x_hat);
+        y_filter.push(y_hat);
+
+        state = matrix(vec![x_hat, xdot_hat, y_hat, ydot_hat], 4, 1, Row);
+        cov = new_cov(&k, &h, &m);
     }
 
     // Plotting
@@ -192,6 +214,9 @@ fn efk_sim() {
 
     let filter_trace = Scatter::new(x_filter, y_filter).name("Filter");
     plot.add_trace(filter_trace);
+
+    let layout = Layout::default().title(Title::new("EKF"));
+    plot.set_layout(layout);
     plot.show();
 }
 
@@ -289,30 +314,6 @@ fn f_func(x: &Vec<f64>, g: Option<&Vec<f64>>) -> Matrix {
     p[(3, 0)] += k[3];
 
     return p;
-}
-
-fn h_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
-    let current_x_estimate = x[0];
-    let current_y_estimate = x[2];
-    let current_r_estimate = r(current_x_estimate, current_y_estimate);
-    let h = matrix(
-        vec![
-            -current_y_estimate / current_r_estimate.powf(2.0),
-            0.0,
-            (current_x_estimate - RADAR_DIST) / current_r_estimate.powf(2.0),
-            0.0,
-            (current_x_estimate - RADAR_DIST) / current_r_estimate,
-            0.0,
-            current_y_estimate / current_r_estimate,
-            0.0,
-        ],
-        2,
-        4,
-        Row,
-    );
-    let x = matrix(x.clone(), 4, 1, Row);
-
-    return h * x;
 }
 
 fn q() -> Matrix {
