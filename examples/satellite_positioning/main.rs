@@ -1,8 +1,5 @@
-use kalman_filtering_rs::{extended_predict, extended_update};
-use peroxide::{
-    prelude::{matrix, zeros, Matrix, Shape::Row},
-    statistics::stat,
-};
+use kalman_filtering_rs::{make_k, make_m, new_cov};
+use peroxide::prelude::{matrix, zeros, Shape::Row};
 use plotly::{Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
@@ -14,8 +11,8 @@ const TS: f64 = 1.0;
 fn main() {
     let data = get_data();
 
-    let mut x_h = vec![];
-    let mut y_h = vec![];
+    let mut x_ideal_h = vec![];
+    let mut y_ideal_h = vec![];
 
     let mut x_m = vec![];
     let mut y_m = vec![];
@@ -28,63 +25,73 @@ fn main() {
     cov[(0, 0)] = 9999999.9;
     cov[(1, 1)] = 9999999.9;
 
-    let f = matrix(vec![1.0, 0.0, 0.0, 1.0], 2, 2, Row);
+    let phi = matrix(vec![1.0, 0.0, 0.0, 1.0], 2, 2, Row);
     let r = matrix(vec![R, 0.0, 0.0, R], 2, 2, Row);
     let q = zeros(2, 2);
 
     for i in 0..data.r1.len() {
         let r1 = data.r1[i];
         let r2 = data.r2[i];
-        let r1_m = data.r1_m[i];
-        let r2_m = data.r2_m[i];
+        let r1_star = data.r1_m[i];
+        let r2_star = data.r2_m[i];
         let xr1 = data.xr1[i];
         let yr1 = data.yr1[i];
         let xr2 = data.xr2[i];
         let yr2 = data.yr2[i];
 
-        let (x, y) = solve_position(r1, r2, xr1, yr1, xr2, yr2);
+        let (x_ideal, y_ideal) = solve_position(r1, r2, xr1, yr1, xr2, yr2);
 
-        x_h.push(x);
-        y_h.push(y);
+        x_ideal_h.push(x_ideal);
+        y_ideal_h.push(y_ideal);
 
-        let (x, y) = solve_position(r1_m, r2_m, xr1, yr1, xr2, yr2);
+        let (x_measure, y_measure) = solve_position(r1_star, r2_star, xr1, yr1, xr2, yr2);
 
-        x_m.push(x);
-        y_m.push(y);
+        x_m.push(x_measure);
+        y_m.push(y_measure);
 
-        let z = matrix(vec![x, y], 2, 1, Row);
+        let x_bar = state.data[0];
+        let y_bar = state.data[1];
 
-        let x = state.data[0];
-        let y = state.data[1];
+        let r_bar1 = ((xr1 - x_bar).powf(2.0) + (yr1 - y_bar).powf(2.0)).sqrt();
+        let r_bar2 = ((xr2 - x_bar).powf(2.0) + (yr2 - y_bar).powf(2.0)).sqrt();
+
+        let res1 = r1_star - r_bar1;
+        let res2 = r2_star - r_bar2;
 
         let h = matrix(
             vec![
-                -(xr1 - x) / r1,
-                -(yr1 - y) / r1,
-                -(xr2 - x) / r2,
-                -(yr2 - y) / r2,
+                -(xr1 - x_bar) / r1,
+                -(yr1 - y_bar) / r1,
+                -(xr2 - x_bar) / r2,
+                -(yr2 - y_bar) / r2,
             ],
             2,
             2,
             Row,
         );
 
-        let o = vec![xr1, yr1, xr2, yr2, r1_m, r2_m];
+        let m = make_m(&phi, &cov, &q);
+        let k = make_k(&m, &h, &r);
 
-        let (new_state, new_cov) = extended_predict(&f_func, &state, &cov, &f, &q, None);
-        let (new_state, new_cov) =
-            extended_update(&h_func, &new_state, &new_cov, &h, &z, &r, Some(&o));
+        let k11 = k[(0, 0)];
+        let k12 = k[(0, 1)];
+        let k21 = k[(1, 0)];
+        let k22 = k[(1, 1)];
 
-        state = new_state;
-        cov = new_cov;
+        let x_hat = x_bar + k11 * res1 + k12 * res2;
+        let y_hat = y_bar + k21 * res1 + k22 * res2;
 
-        x_filter.push(state.data[0]);
-        y_filter.push(state.data[1]);
+        state = matrix(vec![x_hat, y_hat], 2, 1, Row);
+        cov = new_cov(&k, &h, &m);
+
+        x_filter.push(x_hat);
+        y_filter.push(y_hat);
     }
 
     let mut plot = Plot::new();
 
-    let ideal_ranges_trace = Scatter::new(x_h, y_h).name("Calculated from ideal ranges");
+    let ideal_ranges_trace =
+        Scatter::new(x_ideal_h, y_ideal_h).name("Calculated from ideal ranges");
     plot.add_trace(ideal_ranges_trace);
 
     let true_trace = Scatter::new(vec![TRUE_X], vec![TRUE_Y]).name("True position");
@@ -97,43 +104,6 @@ fn main() {
     plot.add_trace(filter_trace);
 
     plot.show();
-}
-
-fn f_func(x: &Vec<f64>, _: Option<&Vec<f64>>) -> Matrix {
-    let f = matrix(vec![1.0, 0.0, 0.0, 1.0], 2, 2, Row);
-    let x = matrix(x.clone(), 2, 1, Row);
-
-    return f * x;
-}
-
-fn h_func(state: &Vec<f64>, o: Option<&Vec<f64>>) -> Matrix {
-    let x = state[0];
-    let y = state[1];
-
-    let o = o.unwrap();
-
-    let xr1 = o[0];
-    let yr1 = o[1];
-    let xr2 = o[2];
-    let yr2 = o[3];
-    let r1 = o[4];
-    let r2 = o[5];
-
-    let h = matrix(
-        vec![
-            -(xr1 - x) / r1,
-            -(yr1 - y) / r1,
-            -(xr2 - x) / r2,
-            -(yr2 - y) / r2,
-        ],
-        2,
-        2,
-        Row,
-    );
-
-    let s = matrix(state.clone(), 2, 1, Row);
-
-    return h * s;
 }
 
 fn solve_position(r1: f64, r2: f64, xr1: f64, yr1: f64, xr2: f64, yr2: f64) -> (f64, f64) {
