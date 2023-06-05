@@ -1,15 +1,18 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov, predict, update};
+use std::{fs::File, io::Write};
+
+use kalman_filtering_rs::{make_k, make_m, new_cov};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, layout::Axis, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
 const SIGNOISE: f64 = 304.8;
-const PHIS: f64 = 10.0;
+const PHIS: f64 = 0.001;
 const TS: f64 = 0.1;
 const INIT_S: f64 = 121920.0;
 const INIT_U: f64 = -1828.8;
 const G: f64 = -9.81;
 const MAXT: f64 = 60.0;
+const WRITE: bool = true;
 
 fn main() {
     let data = get_data();
@@ -27,6 +30,12 @@ fn main() {
     let mut x_history = vec![];
     let mut v_history = vec![];
     let mut a_history = vec![];
+
+    let mut x_residual = vec![];
+    let mut v_residual = vec![];
+    let mut a_residual = vec![];
+
+    let mut x_measurement_residual = vec![];
 
     for i in 0..data.t.len() {
         let x_star = data.x[i];
@@ -57,24 +66,45 @@ fn main() {
         state = matrix(vec![x_hat, xdot_hat, xdotdot_hat], 3, 1, Row);
         cov = new_cov(&k, &h, &m);
 
-        x_history.push(state.data[0]);
-        v_history.push(state.data[1]);
-        a_history.push(state.data[2]);
+        x_history.push(x_hat);
+        v_history.push(xdot_hat);
+        a_history.push(xdotdot_hat);
+
+        x_residual.push(data.s[i] - x_hat);
+        v_residual.push(data.v[i] - xdot_hat);
+        a_residual.push(G - xdotdot_hat);
+
+        x_measurement_residual.push(data.x[i] - data.s[i]);
     }
 
+    // Position Plot
     let mut plot = Plot::new();
     let m_trace = Scatter::new(data.t.clone(), data.s.clone()).name("Truth");
     let x_trace = Scatter::new(data.t.clone(), x_history).name("Filter");
     let s_trace = Scatter::new(data.t.clone(), data.x.clone()).name("Measurements");
+    let layout = Layout::default()
+        .title(Title::new("Position"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("Position (m)")));
+    plot.set_layout(layout);
     plot.add_traces(vec![m_trace, x_trace, s_trace]);
+    let position_plot = plot.to_inline_html("position-plot");
     plot.show();
 
+    // Velocity plot
     let mut plot = Plot::new();
     let filter_trace = Scatter::new(data.t.clone(), v_history).name("Filter Velocity");
     let real_trace = Scatter::new(data.t.clone(), data.v.clone()).name("Real Velocity");
+    let layout = Layout::default()
+        .title(Title::new("Velocity"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("Velocity (m/s)")));
+    plot.set_layout(layout);
     plot.add_traces(vec![filter_trace, real_trace]);
+    let velocity_plot = plot.to_inline_html("velocity-plot");
     plot.show();
 
+    // Acceleration plot
     let mut plot = Plot::new();
     let trace = Scatter::new(data.t.clone(), a_history).name("Filter Acceleration");
     let ideal_trace =
@@ -89,7 +119,63 @@ fn main() {
                 .range(vec![-20.0, 20.0]),
         );
     plot.set_layout(layout);
+    let acceleration_plot = plot.to_inline_html("acceleration-plot");
     plot.show();
+
+    // Position residual
+    let mut plot = Plot::new();
+    let trace = Scatter::new(data.t.clone(), x_residual).name("Filter to true residual");
+    let trace2 =
+        Scatter::new(data.t.clone(), x_measurement_residual).name("Measurement to true residual");
+    plot.add_traces(vec![trace, trace2]);
+    let layout = Layout::default()
+        .title(Title::new("Position Residual"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("Position (m)")));
+    plot.set_layout(layout);
+    let position_residual = plot.to_inline_html("position-residual");
+    plot.show();
+
+    // Velocity residual
+    let mut plot = Plot::new();
+    let trace = Scatter::new(data.t.clone(), v_residual);
+    plot.add_traces(vec![trace]);
+    let layout = Layout::default()
+        .title(Title::new("Velocity Residual"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(
+            Axis::default()
+                .title(Title::new("Velocity (m/s)"))
+                .range(vec![-50.0, 50.0]),
+        );
+    plot.set_layout(layout);
+    let velocity_residual = plot.to_inline_html("velocity-residual");
+    plot.show();
+
+    // Acceleration residual
+    let mut plot = Plot::new();
+    let trace = Scatter::new(data.t.clone(), a_residual);
+    plot.add_traces(vec![trace]);
+    let layout = Layout::default()
+        .title(Title::new("Acceleration Residual"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(
+            Axis::default()
+                .title(Title::new("Acceleration (m/s^2)"))
+                .range(vec![-50.0, 50.0]),
+        );
+    plot.set_layout(layout);
+    let acceleration_residual = plot.to_inline_html("acceleration-residual");
+    plot.show();
+
+    if WRITE {
+        write_to_file("position-plot.html", &position_plot);
+        write_to_file("velocity-plot.html", &velocity_plot);
+        write_to_file("acceleration-plot.html", &acceleration_plot);
+        write_to_file("position-residual.html", &position_residual);
+        write_to_file("velocity-residual.html", &velocity_residual);
+        write_to_file("acceleration-residual.html", &acceleration_residual);
+    }
 }
 
 struct Data {
@@ -180,4 +266,10 @@ fn q(dt: f64) -> Matrix {
     );
 
     return PHIS * q;
+}
+
+fn write_to_file(file_name: &str, content: &String) {
+    let mut file = File::create(file_name).expect("Failed to create file");
+    file.write_all(content.as_bytes())
+        .expect("Failed to write into the file");
 }

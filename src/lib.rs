@@ -46,9 +46,6 @@ pub fn make_m(phi: &Matrix, p: &Matrix, q: &Matrix) -> Matrix {
 }
 
 pub fn make_k(m: &Matrix, h: &Matrix, r: &Matrix) -> Matrix {
-    println!("m\n{}", m);
-    println!("h\n{}", h);
-    println!("r\n{}", r);
     return (m * &h.t()) * (&(h * m * h.t()) + r).inv();
 }
 
