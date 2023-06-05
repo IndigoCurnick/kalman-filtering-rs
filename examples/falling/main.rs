@@ -5,19 +5,19 @@ use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, layout::Axis, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
-const SIGNOISE: f64 = 304.8;
+const SIGNOISE: f64 = 300.0;
 const PHIS: f64 = 0.001;
 const TS: f64 = 0.1;
-const INIT_S: f64 = 121920.0;
-const INIT_U: f64 = -1828.8;
+const INIT_S: f64 = 130_000.0;
+const INIT_U: f64 = -2000.0;
 const G: f64 = -9.81;
 const MAXT: f64 = 60.0;
-const WRITE: bool = true;
+const WRITE: bool = false;
 
 fn main() {
     let data = get_data();
 
-    let mut state = matrix(vec![0.0, 0.0, G], 3, 1, Row);
+    let mut state = matrix(vec![0.0, 0.0, 0.0], 3, 1, Row);
 
     let mut cov = zeros(3, 3);
     cov[(0, 0)] = 99999999.0;
