@@ -1,30 +1,42 @@
-use peroxide::prelude::{eye, Matrix, SimplerLinearAlgebra};
+use peroxide::{
+    fuga::LinearAlgebra,
+    prelude::{eye, Matrix},
+};
 
 pub fn update(x: &Matrix, p: &Matrix, h: &Matrix, z: &Matrix, r: &Matrix) -> (Matrix, Matrix) {
-    let residual = z - &(h * x);
-    let pht = p * &h.t();
-    let s = &(h * &pht) + r;
+    // k
+    let s = &(h * p * h.t()) + r;
     let s_inv = s.inv();
-    let k = &pht * &s_inv;
-    let new_x = x + &(&k * &residual);
-    let i_kh = eye(x.row) - (&k * h);
-    let new_cov = &(&(&i_kh * p) * &i_kh.t()) + &(&(&k * r) * &k.t());
+    let k = (p * &h.t()) * s_inv;
 
+    // state
+    let residual = z - &(h * x);
+    println!("y {}", residual);
+    let new_x = x + &(&k * &residual);
+
+    // cov
+    let t = &k * h;
+    let i_kh = eye(t.col) - t;
+    println!("ikh\n{}", i_kh);
+    let new_cov = &(&(&i_kh * p) * &i_kh.t()) + &(&(&k * r) * &k.t());
+    // let new_cov = 0.5 * &new_cov + 0.5 * &new_cov.t();
+    // let new_cov = &i_kh * p;
+    println!("new cov\n{}", new_cov);
     return (new_x, new_cov);
 }
 
 pub fn predict(
     x: &Matrix,
     p: &Matrix,
-    f: &Matrix,
+    phi: &Matrix,
     q: &Matrix,
     g: Option<&Matrix>,
 ) -> (Matrix, Matrix) {
-    let mut new_x = f * x;
+    let mut new_x = phi * x;
     if g.is_some() {
         new_x = &new_x + g.unwrap();
     }
-    let new_cov = &(&(f * p) * f) + q;
+    let new_cov = &(&(phi * p) * phi) + q;
 
     return (new_x, new_cov);
 }
