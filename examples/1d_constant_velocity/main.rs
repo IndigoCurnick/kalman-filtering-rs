@@ -1,4 +1,4 @@
-use kalman_filtering_rs::{predict, update};
+use kalman_filtering_rs::{make_k, make_m, new_cov};
 use peroxide::prelude::{eye, matrix, Shape::Row};
 use plotly::{Plot, Scatter};
 use rand_distr::{Distribution, Normal};
@@ -18,21 +18,33 @@ fn main() {
     let mut position_history = vec![];
     let mut speed_history = vec![];
 
-    let q = matrix(vec![1.0 / 4.0, 1.0 / 2.0, 1.0 / 2.0, 1.0], 2, 2, Row);
+    let q = 0.1 * matrix(vec![1.0 / 3.0, 1.0 / 2.0, 1.0 / 2.0, 1.0], 2, 2, Row);
 
-    for m in &measurements {
-        let z = matrix(vec![*m], 1, 1, Row);
-
+    for meas in &measurements {
         let r = matrix(vec![2.0], 1, 1, Row);
+        let x_star = *meas;
+        let m = make_m(&f, &p, &q);
+        let k = make_k(&m, &h, &r);
 
-        let (new_x, new_p) = predict(&x, &p, &f, &q, None);
-        let (new_x, new_p) = update(&new_x, &new_p, &h, &z, &r);
+        let xkminus1 = x.data[0];
+        let xdotkminus1 = x.data[1];
 
-        position_history.push(new_x.data[0]);
-        speed_history.push(new_x.data[1]);
+        let xdot_bar = xdotkminus1;
+        let x_bar = xkminus1 + 1.0 * xdot_bar;
 
-        x = new_x;
-        p = new_p;
+        let k1 = k[(0, 0)];
+        let k2 = k[(1, 0)];
+
+        let x_tilde = x_star - x_bar;
+
+        let x_hat = x_bar + k1 * x_tilde;
+        let xdot_hat = xdot_bar + k2 * x_tilde;
+
+        position_history.push(x_hat);
+        speed_history.push(xdot_hat);
+
+        x = matrix(vec![x_hat, xdot_hat], 2, 1, Row);
+        p = new_cov(&k, &h, &m);
     }
 
     let mut true_speeds = vec![];
