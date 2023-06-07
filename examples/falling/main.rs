@@ -1,6 +1,4 @@
-use std::{fs::File, io::Write};
-
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, layout::Axis, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
@@ -169,12 +167,12 @@ fn main() {
     plot.show();
 
     if WRITE {
-        write_to_file("position-plot.html", &position_plot);
-        write_to_file("velocity-plot.html", &velocity_plot);
-        write_to_file("acceleration-plot.html", &acceleration_plot);
-        write_to_file("position-residual.html", &position_residual);
-        write_to_file("velocity-residual.html", &velocity_residual);
-        write_to_file("acceleration-residual.html", &acceleration_residual);
+        write_to_file("position-plot.html.tera", &position_plot);
+        write_to_file("velocity-plot.html.tera", &velocity_plot);
+        write_to_file("acceleration-plot.html.tera", &acceleration_plot);
+        write_to_file("position-residual.html.tera", &position_residual);
+        write_to_file("velocity-residual.html.tera", &velocity_residual);
+        write_to_file("acceleration-residual.html.tera", &acceleration_residual);
     }
 }
 
@@ -266,10 +264,4 @@ fn q(dt: f64) -> Matrix {
     );
 
     return PHIS * q;
-}
-
-fn write_to_file(file_name: &str, content: &String) {
-    let mut file = File::create(file_name).expect("Failed to create file");
-    file.write_all(content.as_bytes())
-        .expect("Failed to write into the file");
 }
