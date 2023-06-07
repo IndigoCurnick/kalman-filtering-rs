@@ -1,4 +1,3 @@
-use kalman_filtering_rs::{predict, update};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{Plot, Scatter};
 use rand_distr::{Distribution, Normal};

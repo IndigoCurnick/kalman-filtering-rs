@@ -95,7 +95,7 @@ fn main() {
     let mut plot = Plot::new();
     let trace = Scatter::new(data.t.clone(), x_residual).name("Filter to true residual");
     let trace2 = Scatter::new(data.t.clone(), x_m_residual).name("Measurement to true residual");
-    plot.add_traces(vec![trace, trace2]);
+    plot.add_traces(vec![trace2, trace]);
     let layout = Layout::default()
         .title(Title::new("Position Residual"))
         .x_axis(Axis::default().title(Title::new("t (s)")))

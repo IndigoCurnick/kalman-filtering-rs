@@ -1,8 +1,5 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov, predict, update};
-use peroxide::{
-    prelude::{diag, eye, matrix, zeros, Matrix, Shape::Row},
-    statistics::stat,
-};
+use kalman_filtering_rs::{make_k, make_m, new_cov};
+use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
@@ -13,7 +10,8 @@ const TS: f64 = 0.1; // Time step s
 const THETA_ERROR: f64 = 0.01; // radians
 const R_ERROR: f64 = 20.5; // m
 const RADAR_DIST: f64 = 30_500.0; // m
-const Q: f64 = 10.0; // Q scaling factor
+const LINEARQ: f64 = 2.0; // Q scaling factor
+const EKFQ: f64 = 0.1;
 
 fn main() {
     linear_sim();
@@ -23,7 +21,7 @@ fn main() {
 fn linear_sim() {
     let data = get_data();
 
-    let r_noise = matrix(
+    let r = matrix(
         vec![THETA_ERROR.powf(2.0), 0.0, 0.0, R_ERROR.powf(2.0)],
         2,
         2,
@@ -39,13 +37,12 @@ fn linear_sim() {
     cov[(1, 1)] = 99999.9;
     cov[(2, 2)] = 99999.9;
     cov[(3, 3)] = 99999.9;
-    let q = q();
+    let q = q(LINEARQ);
 
     let mut x_measurements = vec![];
     let mut y_measurements = vec![];
 
-    let g = matrix(vec![0.0, 0.0, -G * TS.powf(2.0) / 2.0, -G * TS], 4, 1, Row);
-    let f = matrix(
+    let phi = matrix(
         vec![
             1.0, TS, 0.0, 0.0, // These comments
             0.0, 1.0, 0.0, 0.0, // are just here
@@ -63,26 +60,50 @@ fn linear_sim() {
     let h = matrix(vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], 2, 4, Row);
 
     for i in 0..data.r_measurements.len() {
-        let theta_m = data.theta_measurements[i];
-        let r_m = data.r_measurements[i];
+        let theta_star = data.theta_measurements[i];
+        let r_star = data.r_measurements[i];
 
-        let x_m = x(r_m, theta_m);
-        let y_m = y(r_m, theta_m);
-        x_measurements.push(x_m);
-        y_measurements.push(y_m);
+        let x_star = x(r_star, theta_star);
+        let y_star = y(r_star, theta_star);
 
-        let z = matrix(vec![x_m, y_m], 2, 1, Row);
+        x_measurements.push(x_star);
+        y_measurements.push(y_star);
 
-        let (new_state, new_cov) = predict(&state, &cov, &f, &q, Some(&g));
-        let (new_state, new_cov) = update(&new_state, &new_cov, &h, &z, &r_noise);
+        let xkminus1 = state.data[0];
+        let xdotkminus1 = state.data[1];
+        let ykminus1 = state.data[2];
+        let ydotkminus1 = state.data[3];
 
-        x_filter.push(new_state.data[0]);
-        y_filter.push(new_state.data[2]);
+        let xbar = xkminus1 + TS * xdotkminus1;
+        let xdotbar = xkminus1;
+        let ybar = ykminus1 + TS * ydotkminus1 - 0.5 * G * TS.powf(2.0);
+        let ydotbar = ydotkminus1 - G * TS;
 
-        println!("state after\n{}", new_state);
+        let x_tilde = x_star - xbar;
+        let y_tilde = y_star - ybar;
 
-        state = new_state;
-        cov = new_cov;
+        let m = make_m(&phi, &cov, &q);
+        let k = make_k(&m, &h, &r);
+
+        let k11 = k[(0, 0)];
+        let k12 = k[(0, 1)];
+        let k21 = k[(1, 0)];
+        let k22 = k[(1, 1)];
+        let k31 = k[(2, 0)];
+        let k32 = k[(2, 1)];
+        let k41 = k[(3, 0)];
+        let k42 = k[(3, 1)];
+
+        let x_hat = xbar + k11 * x_tilde + k12 * y_tilde;
+        let xdot_hat = xdotbar + k21 * x_tilde + k22 * y_tilde;
+        let y_hat = ybar + k31 * x_tilde + k32 * y_tilde;
+        let ydot_hat = ydotbar + k41 * x_tilde + k42 * y_tilde;
+
+        x_filter.push(x_hat);
+        y_filter.push(y_hat);
+
+        state = matrix(vec![x_hat, xdot_hat, y_hat, ydot_hat], 4, 1, Row);
+        cov = new_cov(&k, &h, &m);
     }
 
     // Plotting
@@ -120,7 +141,7 @@ fn efk_sim() {
     cov[(1, 1)] = 99999.9;
     cov[(2, 2)] = 99999.9;
     cov[(3, 3)] = 99999.9;
-    let q = q();
+    let q = q(EKFQ);
 
     let mut x_measurements = vec![];
     let mut y_measurements = vec![];
@@ -316,7 +337,7 @@ fn f_func(x: &Vec<f64>, g: Option<&Vec<f64>>) -> Matrix {
     return p;
 }
 
-fn q() -> Matrix {
+fn q(sf: f64) -> Matrix {
     let q = matrix(
         vec![
             TS.powf(3.0) / 3.0,
@@ -341,7 +362,7 @@ fn q() -> Matrix {
         Row,
     );
 
-    return Q * q;
+    return sf * q;
 }
 
 struct Data {
