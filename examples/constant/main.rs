@@ -1,4 +1,4 @@
-use kalman_filtering_rs::{predict, update};
+use kalman_filtering_rs::{make_k, make_m, new_cov};
 use peroxide::prelude::{matrix, Shape::Row};
 use plotly::{Plot, Scatter};
 use rand_distr::{Distribution, Normal};
@@ -10,21 +10,29 @@ fn main() {
     let mut p = matrix(vec![5.0], 1, 1, Row);
 
     let h = matrix(vec![1.0], 1, 1, Row);
-    let f = matrix(vec![1.0], 1, 1, Row);
+    let phi = matrix(vec![1.0], 1, 1, Row);
+    let q = matrix(vec![0.0], 1, 1, Row);
+    let r = matrix(vec![10.0], 1, 1, Row);
 
     let mut history = vec![];
     for measurement in &measurements {
-        let z = matrix(vec![*measurement], 1, 1, Row);
-        let q = matrix(vec![0.0], 1, 1, Row);
-        let r = matrix(vec![10.0], 1, 1, Row);
+        let x_star = *measurement;
 
-        let (new_x, new_p) = predict(&x, &p, &f, &q, None);
-        let (new_x, new_p) = update(&new_x, &new_p, &h, &z, &r);
+        let xkminusone = x.data[0];
 
-        history.push(new_x.data[0]);
+        let x_tilde = x_star - xkminusone;
 
-        x = new_x;
-        p = new_p;
+        let m = make_m(&phi, &p, &q);
+        let k = make_k(&m, &h, &r);
+
+        let k1 = k.data[0];
+
+        let x_hat = xkminusone + k1 * x_tilde;
+
+        x = matrix(vec![x_hat], 1, 1, Row);
+        p = new_cov(&k, &h, &m);
+
+        history.push(x.data[0]);
     }
 
     let mut inex = vec![];
