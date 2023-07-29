@@ -135,7 +135,7 @@ fn main() {
         );
         write_to_file(
             "velocity-residual.html.tera",
-            &vr_plot.to_inline_html("velocity-plot"),
+            &vr_plot.to_inline_html("velocity-residual"),
         );
     }
 }
