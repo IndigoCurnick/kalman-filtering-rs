@@ -1,6 +1,6 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
-use plotly::{common::Title, Layout, Plot, Scatter};
+use plotly::{common::Title, layout::Axis, Layout, Plot, Scatter};
 use rand_distr::{Distribution, Normal};
 
 const G: f64 = 9.81;
@@ -10,122 +10,17 @@ const TS: f64 = 0.1; // Time step s
 const THETA_ERROR: f64 = 0.01; // radians
 const R_ERROR: f64 = 20.5; // m
 const RADAR_DIST: f64 = 30_500.0; // m
-const LINEARQ: f64 = 2.0; // Q scaling factor
 const EKFQ: f64 = 0.1;
+const WRITE: bool = false;
 
 fn main() {
-    linear_sim();
     efk_sim();
-}
-
-fn linear_sim() {
-    let data = get_data();
-
-    let r = matrix(
-        vec![THETA_ERROR.powf(2.0), 0.0, 0.0, R_ERROR.powf(2.0)],
-        2,
-        2,
-        Row,
-    );
-    let mut state = zeros(4, 1);
-    state[(1, 0)] = data.vx[0];
-    state[(3, 0)] = data.vy[0];
-
-    println!("Opening state\n{}", state);
-    let mut cov = zeros(4, 4);
-    cov[(0, 0)] = 99999.9;
-    cov[(1, 1)] = 99999.9;
-    cov[(2, 2)] = 99999.9;
-    cov[(3, 3)] = 99999.9;
-    let q = q(LINEARQ);
-
-    let mut x_measurements = vec![];
-    let mut y_measurements = vec![];
-
-    let phi = matrix(
-        vec![
-            1.0, TS, 0.0, 0.0, // These comments
-            0.0, 1.0, 0.0, 0.0, // are just here
-            0.0, 0.0, 1.0, TS, // to stop format
-            0.0, 0.0, 0.0, 1.0, // putting this on one line
-        ],
-        4,
-        4,
-        Row,
-    );
-
-    let mut x_filter = vec![];
-    let mut y_filter = vec![];
-
-    let h = matrix(vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], 2, 4, Row);
-
-    for i in 0..data.r_measurements.len() {
-        let theta_star = data.theta_measurements[i];
-        let r_star = data.r_measurements[i];
-
-        let x_star = x(r_star, theta_star);
-        let y_star = y(r_star, theta_star);
-
-        x_measurements.push(x_star);
-        y_measurements.push(y_star);
-
-        let xkminus1 = state.data[0];
-        let xdotkminus1 = state.data[1];
-        let ykminus1 = state.data[2];
-        let ydotkminus1 = state.data[3];
-
-        let xbar = xkminus1 + TS * xdotkminus1;
-        let xdotbar = xkminus1;
-        let ybar = ykminus1 + TS * ydotkminus1 - 0.5 * G * TS.powf(2.0);
-        let ydotbar = ydotkminus1 - G * TS;
-
-        let x_tilde = x_star - xbar;
-        let y_tilde = y_star - ybar;
-
-        let m = make_m(&phi, &cov, &q);
-        let k = make_k(&m, &h, &r);
-
-        let k11 = k[(0, 0)];
-        let k12 = k[(0, 1)];
-        let k21 = k[(1, 0)];
-        let k22 = k[(1, 1)];
-        let k31 = k[(2, 0)];
-        let k32 = k[(2, 1)];
-        let k41 = k[(3, 0)];
-        let k42 = k[(3, 1)];
-
-        let x_hat = xbar + k11 * x_tilde + k12 * y_tilde;
-        let xdot_hat = xdotbar + k21 * x_tilde + k22 * y_tilde;
-        let y_hat = ybar + k31 * x_tilde + k32 * y_tilde;
-        let ydot_hat = ydotbar + k41 * x_tilde + k42 * y_tilde;
-
-        x_filter.push(x_hat);
-        y_filter.push(y_hat);
-
-        state = matrix(vec![x_hat, xdot_hat, y_hat, ydot_hat], 4, 1, Row);
-        cov = new_cov(&k, &h, &m);
-    }
-
-    // Plotting
-    let mut plot = Plot::new();
-    let ideal_trace = Scatter::new(data.x.clone(), data.y.clone()).name("Theory");
-    plot.add_trace(ideal_trace);
-
-    let measurement_trace = Scatter::new(x_measurements, y_measurements).name("Measurements");
-    plot.add_trace(measurement_trace);
-
-    let filter_trace = Scatter::new(x_filter, y_filter).name("Filter");
-    plot.add_trace(filter_trace);
-
-    let layout = Layout::default().title(Title::new("Fully Linear"));
-    plot.set_layout(layout);
-    plot.show();
 }
 
 fn efk_sim() {
     let data = get_data();
 
-    let r = matrix(
+    let r_noise = matrix(
         vec![THETA_ERROR.powf(2.0), 0.0, 0.0, R_ERROR.powf(2.0)],
         2,
         2,
@@ -161,12 +56,25 @@ fn efk_sim() {
         Row,
     );
 
+    let mut x_measurement_residual = vec![];
+    let mut y_measurement_residual = vec![];
+    let mut x_residual = vec![];
+    let mut y_residual = vec![];
+
+    let mut r_measurement_residual = vec![];
+    let mut theta_measurement_residual = vec![];
+    let mut r_residual = vec![];
+    let mut theta_residual = vec![];
+
     for i in 0..data.r_measurements.len() {
         let theta_star = data.theta_measurements[i];
         let r_star = data.r_measurements[i];
 
-        x_measurements.push(x(r_star, theta_star));
-        y_measurements.push(y(r_star, theta_star));
+        let x_star = x(r_star, theta_star);
+        let y_star = y(r_star, theta_star);
+
+        x_measurements.push(x_star);
+        y_measurements.push(y_star);
 
         let xkminus1 = state.data[0];
         let xdotkminus1 = state.data[1];
@@ -199,7 +107,7 @@ fn efk_sim() {
         );
 
         let m = make_m(&phi, &cov, &q);
-        let k = make_k(&m, &h, &r);
+        let k = make_k(&m, &h, &r_noise);
 
         let k11 = k[(0, 0)];
         let k12 = k[(0, 1)];
@@ -223,22 +131,128 @@ fn efk_sim() {
 
         state = matrix(vec![x_hat, xdot_hat, y_hat, ydot_hat], 4, 1, Row);
         cov = new_cov(&k, &h, &m);
+
+        x_residual.push(x_hat - data.x[i]);
+        y_residual.push(y_hat - data.y[i]);
+
+        x_measurement_residual.push(x_star - data.x[i]);
+        y_measurement_residual.push(y_star - data.y[i]);
+
+        r_measurement_residual.push(r_star - data.r[i]);
+        theta_measurement_residual.push(theta_star - data.theta[i]);
+
+        let r_hat = r(x_hat, y_hat);
+        let theta_hat = theta(x_hat, y_hat);
+
+        r_residual.push(r_hat - data.r[i]);
+        theta_residual.push(theta_hat - data.theta[i]);
     }
 
     // Plotting
-    let mut plot = Plot::new();
+    let mut full_plot = Plot::new();
     let ideal_trace = Scatter::new(data.x.clone(), data.y.clone()).name("Theory");
-    plot.add_trace(ideal_trace);
+    full_plot.add_trace(ideal_trace);
 
     let measurement_trace = Scatter::new(x_measurements, y_measurements).name("Measurements");
-    plot.add_trace(measurement_trace);
+    full_plot.add_trace(measurement_trace);
 
     let filter_trace = Scatter::new(x_filter, y_filter).name("Filter");
-    plot.add_trace(filter_trace);
+    full_plot.add_trace(filter_trace);
 
     let layout = Layout::default().title(Title::new("EKF"));
-    plot.set_layout(layout);
-    plot.show();
+    full_plot.set_layout(layout);
+    full_plot.show();
+
+    // Plotting X Residuals
+    let mut x_residual_plot = Plot::new();
+    let trace =
+        Scatter::new(data.time.clone(), x_measurement_residual).name("x measurements residuals");
+    x_residual_plot.add_trace(trace);
+
+    let trace = Scatter::new(data.time.clone(), x_residual).name("x residuals");
+    x_residual_plot.add_trace(trace);
+    let layout = Layout::default()
+        .title(Title::new("x Residual - EKF"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("x (m)")));
+
+    x_residual_plot.set_layout(layout);
+    x_residual_plot.show();
+
+    // Plotting Y residuals
+    let mut y_residual_plot = Plot::new();
+    let trace =
+        Scatter::new(data.time.clone(), y_measurement_residual).name("y measurements residuals");
+    y_residual_plot.add_trace(trace);
+
+    let trace = Scatter::new(data.time.clone(), y_residual).name("y residuals");
+    y_residual_plot.add_trace(trace);
+    let layout = Layout::default()
+        .title(Title::new("y Residual - EKF"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("y (m)")));
+
+    y_residual_plot.set_layout(layout);
+    y_residual_plot.show();
+
+    // Plotting r Residuals
+    let mut r_residual_plot = Plot::new();
+    let trace =
+        Scatter::new(data.time.clone(), r_measurement_residual).name("r measurements residuals");
+    r_residual_plot.add_trace(trace);
+
+    let trace = Scatter::new(data.time.clone(), r_residual).name("r residuals");
+    r_residual_plot.add_trace(trace);
+    let layout = Layout::default()
+        .title(Title::new("r Residual - EKF"))
+        .x_axis(Axis::default().title(Title::new("t (s)")))
+        .y_axis(Axis::default().title(Title::new("r (m)")));
+
+    r_residual_plot.set_layout(layout);
+    r_residual_plot.show();
+
+    // Plotting theta residuals
+    let mut theta_residual_plot = Plot::new();
+    let trace = Scatter::new(data.time.clone(), theta_measurement_residual)
+        .name("theta measurements residuals");
+    theta_residual_plot.add_trace(trace);
+
+    let trace = Scatter::new(data.time.clone(), theta_residual).name("theta residuals");
+    theta_residual_plot.add_trace(trace);
+    let layout = Layout::default()
+        .title(Title::new("theta Residual - EKF"))
+        .x_axis(Axis::default().title(Title::new("theta (radians)")))
+        .y_axis(
+            Axis::default()
+                .title(Title::new("y (m)"))
+                .range(vec![-0.5, 0.5]),
+        );
+
+    theta_residual_plot.set_layout(layout);
+    theta_residual_plot.show();
+
+    if WRITE {
+        write_to_file(
+            "full-plot-ekf.html.tera",
+            &full_plot.to_inline_html("full-plot-ekf"),
+        );
+        write_to_file(
+            "x-residual-ekf.html.tera",
+            &x_residual_plot.to_inline_html("x-residual-ekf"),
+        );
+        write_to_file(
+            "y-residual-ekf.html.tera",
+            &y_residual_plot.to_inline_html("y-residual-ekf"),
+        );
+        write_to_file(
+            "r-residual-ekf.html.tera",
+            &r_residual_plot.to_inline_html("r-residual-ekf"),
+        );
+        write_to_file(
+            "theta-residual-ekf.html.tera",
+            &theta_residual_plot.to_inline_html("theta-residual-ekf"),
+        );
+    }
 }
 
 fn get_data() -> Data {
@@ -255,6 +269,8 @@ fn get_data() -> Data {
     let mut vy_history = vec![];
     let mut theta_measurements = vec![];
     let mut r_measurements = vec![];
+    let mut r_ideal = vec![];
+    let mut theta_ideal = vec![];
 
     let theta_normal = Normal::new(0.0, THETA_ERROR).unwrap();
     let r_normal = Normal::new(0.0, R_ERROR).unwrap();
@@ -267,8 +283,13 @@ fn get_data() -> Data {
         vx_history.push(vx);
         vy_history.push(vy);
 
-        theta_measurements.push(theta(x, y) + theta_normal.sample(&mut rng));
-        r_measurements.push(r(x, y) + r_normal.sample(&mut rng));
+        let r = r(x, y);
+        let theta = theta(x, y);
+
+        theta_ideal.push(theta);
+        r_ideal.push(r);
+        theta_measurements.push(theta + theta_normal.sample(&mut rng));
+        r_measurements.push(r + r_normal.sample(&mut rng));
 
         // y direction
         let tmp_vy = vy - G * TS;
@@ -292,6 +313,8 @@ fn get_data() -> Data {
         vy: vy_history,
         r_measurements: r_measurements,
         theta_measurements: theta_measurements,
+        r: r_ideal,
+        theta: theta_ideal,
     };
 }
 
@@ -310,31 +333,6 @@ fn x(r: f64, theta: f64) -> f64 {
 
 fn y(r: f64, theta: f64) -> f64 {
     return r * theta.sin();
-}
-
-fn f_func(x: &Vec<f64>, g: Option<&Vec<f64>>) -> Matrix {
-    let f = matrix(
-        vec![
-            1.0, TS, 0.0, 0.0, //
-            0.0, 1.0, 0.0, 0.0, //
-            0.0, 0.0, 1.0, TS, //
-            0.0, 0.0, 0.0, 1.0, //
-        ],
-        4,
-        4,
-        Row,
-    );
-
-    let s = matrix(x.clone(), 4, 1, Row);
-
-    let mut p = f * s;
-
-    let k = g.unwrap();
-
-    p[(2, 0)] += k[2];
-    p[(3, 0)] += k[3];
-
-    return p;
 }
 
 fn q(sf: f64) -> Matrix {
@@ -373,4 +371,6 @@ struct Data {
     pub vy: Vec<f64>,
     pub r_measurements: Vec<f64>,
     pub theta_measurements: Vec<f64>,
+    pub r: Vec<f64>,
+    pub theta: Vec<f64>,
 }
