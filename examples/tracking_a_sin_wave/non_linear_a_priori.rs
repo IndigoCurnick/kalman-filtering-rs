@@ -1,8 +1,8 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 
-use crate::{get_data, A, OMEGA, R, TS};
+use crate::{get_data, A, OMEGA, R, TS, WRITE};
 
 const NON_LINEAR_A_PRIORI_Q: f64 = 10.0;
 
@@ -93,6 +93,18 @@ pub fn non_linear_a_priori() {
     let layout = Layout::default().title(Title::new("Non-Linear A Priori Residuals"));
     residual_plot.set_layout(layout);
     residual_plot.show();
+
+    if WRITE {
+        let namespace = "non-linear-a-priori".to_string();
+        write_to_file(
+            &format!("full-plot-{}.html.tera", namespace),
+            &full_plot.to_inline_html("full-plot-non-linear-a-priori"),
+        );
+        write_to_file(
+            &format!("residual-{}.html.tera", namespace),
+            &residual_plot.to_inline_html("residual-non-linear-a-priori"),
+        );
+    }
 }
 
 fn q_non_linear_a_priori(dt: f64) -> Matrix {

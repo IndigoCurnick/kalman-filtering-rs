@@ -1,8 +1,8 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 
-use crate::{get_data, q_linear_first_order, OMEGA, R, TS};
+use crate::{get_data, q_linear_first_order, OMEGA, R, TS, WRITE};
 
 pub fn linear_a_priori() {
     let data = get_data();
@@ -90,4 +90,16 @@ pub fn linear_a_priori() {
     let layout = Layout::default().title(Title::new("Linear A Priori Residuals"));
     residual_plot.set_layout(layout);
     residual_plot.show();
+
+    if WRITE {
+        let namespace = "linear-a-priori".to_string();
+        write_to_file(
+            &format!("full-plot-{}.html.tera", namespace),
+            &full_plot.to_inline_html("full-plot-linear-a-priori"),
+        );
+        write_to_file(
+            &format!("residual-{}.html.tera", namespace),
+            &residual_plot.to_inline_html("residual-linear-a-priori"),
+        );
+    }
 }

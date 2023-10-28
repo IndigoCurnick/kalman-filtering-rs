@@ -1,8 +1,8 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 
-use crate::{get_data, q_linear_first_order, R, TS};
+use crate::{get_data, q_linear_first_order, R, TS, WRITE};
 
 pub fn linear_first_order() {
     let data = get_data();
@@ -72,4 +72,16 @@ pub fn linear_first_order() {
     let layout = Layout::default().title(Title::new("Linear First Order Residuals"));
     residual_plot.set_layout(layout);
     residual_plot.show();
+
+    if WRITE {
+        let namespace = "linear-first-order".to_string();
+        write_to_file(
+            &format!("full-plot-{}.html.tera", namespace),
+            &full_plot.to_inline_html("full-plot-linear-first-order"),
+        );
+        write_to_file(
+            &format!("residual-{}.html.tera", namespace),
+            &residual_plot.to_inline_html("residual-linear-first-order"),
+        );
+    }
 }

@@ -1,10 +1,10 @@
 use std::ops::Div;
 
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 
-use crate::{get_data, OMEGA, R, TS};
+use crate::{get_data, OMEGA, R, TS, WRITE};
 
 const NON_LINEAR_ALTERNATIVE_Q: f64 = 10.0;
 
@@ -113,6 +113,18 @@ pub fn alternative_non_linear() {
     let layout = Layout::default().title(Title::new("Non-Linear Alternative Residuals"));
     residual_plot.set_layout(layout);
     residual_plot.show();
+
+    if WRITE {
+        let namespace = "alternative-non-linear".to_string();
+        write_to_file(
+            &format!("full-plot-{}.html.tera", namespace),
+            &full_plot.to_inline_html("full-plot-alternative-non-linear"),
+        );
+        write_to_file(
+            &format!("residual-{}.html.tera", namespace),
+            &residual_plot.to_inline_html("residual-alternative-non-linear"),
+        );
+    }
 }
 
 fn q_alternative_non_linear(dt: f64, omega: f64, x: f64) -> Matrix {

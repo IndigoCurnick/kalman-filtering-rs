@@ -1,8 +1,8 @@
-use kalman_filtering_rs::{make_k, make_m, new_cov};
+use kalman_filtering_rs::{make_k, make_m, new_cov, write_to_file};
 use peroxide::prelude::{matrix, zeros, Matrix, Shape::Row};
 use plotly::{common::Title, Layout, Plot, Scatter};
 
-use crate::{get_data, R, TS};
+use crate::{get_data, R, TS, WRITE};
 
 const LINEAR_SECOND_ORDER_Q: f64 = 10.0;
 
@@ -86,6 +86,18 @@ pub fn linear_second_order() {
     let layout = Layout::default().title(Title::new("Linear Second Order Residuals"));
     residual_plot.set_layout(layout);
     residual_plot.show();
+
+    if WRITE {
+        let namespace = "linear-second-order".to_string();
+        write_to_file(
+            &format!("full-plot-{}.html.tera", namespace),
+            &full_plot.to_inline_html("full-plot-linear-second-order"),
+        );
+        write_to_file(
+            &format!("residual-{}.html.tera", namespace),
+            &residual_plot.to_inline_html("residual-linear-second-order"),
+        );
+    }
 }
 
 fn q_linear_second_order(dt: f64) -> Matrix {

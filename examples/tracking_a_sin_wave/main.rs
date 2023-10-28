@@ -13,6 +13,8 @@ pub const TS: f64 = 0.01; // Time sampling
 pub const R: f64 = 0.2;
 const LINEAR_FIRST_ORDER_Q: f64 = 1.0;
 
+pub const WRITE: bool = true;
+
 mod alternative_non_linear;
 mod linear_a_priori;
 mod linear_first_order;
