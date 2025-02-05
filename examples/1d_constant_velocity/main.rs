@@ -37,7 +37,7 @@ fn main() {
         let xdotkminus1 = x.data[1];
 
         let xdot_bar = xdotkminus1;
-        let x_bar = xkminus1 + 1.0 * xdot_bar;
+        let x_bar = xkminus1 + 1.0 * xdotkminus1;
 
         let k1 = k[(0, 0)];
         let k2 = k[(1, 0)];

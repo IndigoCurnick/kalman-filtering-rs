@@ -43,8 +43,8 @@ fn main() {
         let xdotdotkminus1 = state.data[2];
 
         let xdotdot_bar = xdotdotkminus1;
-        let xdot_bar = xdotkminus1 + xdotdot_bar * TS;
-        let x_bar = xkminus1 + xdot_bar * TS + 0.5 * xdotdot_bar * TS.powf(2.0);
+        let xdot_bar = xdotkminus1 + xdotdotkminus1 * TS;
+        let x_bar = xkminus1 + xdotkminus1 * TS + 0.5 * xdotdotkminus1 * TS.powf(2.0);
 
         let phi = phi(TS);
         let q = q(TS);
